@@ -78,13 +78,21 @@ int main(int argc, char **argv)
 	printf("Performance (MFLOPS): %lf\n", mflop);
 
 	double totalnoise = 0;
+	// for (size_t oidx = 0; oidx < input_cnt; oidx++)
+	// {
+	// 	size_t origin = oidx * model_dim_out;
+	// 	for (size_t i = origin; i < origin + model_dim_out; i++)
+	// 	{
+	// 		printf("Input: %f, Output: %f\n", inputs[i], outputs[i]);
+	// 	}
+	// }
 	for (size_t oidx = 0; oidx < input_cnt; oidx++)
 	{
 		size_t origin = oidx * model_dim_out;
 		float noise = 0;
 		for (size_t i = origin; i < origin + model_dim_out; i++)
 		{
-			// printf("Output: %f, Golden: %f\n", outputs[i], outputs_golden[i]);
+			printf("Output: %f, Golden: %f\n", outputs[i], outputs_golden[i]);
 			noise += std::abs(outputs[i] - outputs_golden[i]);
 		}
 		totalnoise += noise;
