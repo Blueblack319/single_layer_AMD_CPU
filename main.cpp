@@ -92,7 +92,7 @@ int main(int argc, char **argv)
 		float noise = 0;
 		for (size_t i = origin; i < origin + model_dim_out; i++)
 		{
-			printf("Output: %f, Golden: %f\n", outputs[i], outputs_golden[i]);
+			// printf("Output: %f, Golden: %f\n", outputs[i], outputs_golden[i]);
 			noise += std::abs(outputs[i] - outputs_golden[i]);
 		}
 		totalnoise += noise;

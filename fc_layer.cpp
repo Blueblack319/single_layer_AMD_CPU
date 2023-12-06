@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <immintrin.h>
+#define UNROLL 4
+#define NUM_ELEMENTS 8
 
 // void fc_layer(size_t data_cnt,	 // D: 32 ~ 4096
 // 			  size_t input_dim,	 // N
@@ -128,6 +130,48 @@
 // 		}
 // }
 
+// void fc_layer(size_t data_cnt,	 // D: 32 ~ 4096
+// 			  size_t input_dim,	 // N
+// 			  size_t output_dim, // M
+// 			  float *matrix,
+// 			  float *bias,
+// 			  float *input,
+// 			  float *output)
+// {
+// 	int i, o, a, iidx, oidx, aidx, B = 32;
+// 	__m256 outv;
+// 	int cond = input_dim - B;
+
+// 	for (i = 0; i < data_cnt; i += B)
+// 		for (o = 0; o < output_dim; o += B)
+// 		{
+// 			for (a = 0; a < input_dim; a += B)
+// 				// B x B mini matrix multiplication
+// 				for (iidx = i; iidx < i + B; iidx++)
+// 				{
+// 					for (oidx = o; oidx < o + B; oidx += 8)
+// 					{
+// 						outv = _mm256_load_ps(&output[iidx * output_dim + oidx]);
+// 						for (aidx = a; aidx < a + B; aidx += 1)
+// 						{
+// 							for (int x = 0; x < 4; x++)
+// 							{
+// 								outv = _mm256_add_ps(outv, _mm256_mul_ps(_mm256_broadcast_ss(&input[input_dim * iidx + aidx]), _mm256_load_ps(&matrix[output_dim * aidx + oidx])));
+// 							}
+// 						}
+// 						if (a == cond)
+// 						{
+// 							// ReLU activation function
+// 							outv = _mm256_max_ps(_mm256_add_ps(outv, _mm256_load_ps(bias + oidx)), _mm256_setzero_ps());
+// 						}
+// 						// Store the output
+// 						// output[iidx * output_dim + oidx] = outv;
+// 						_mm256_store_ps(&output[iidx * output_dim + oidx], outv);
+// 					}
+// 				}
+// 		}
+// }
+
 void fc_layer(size_t data_cnt,	 // D: 32 ~ 4096
 			  size_t input_dim,	 // N
 			  size_t output_dim, // M
@@ -136,11 +180,9 @@ void fc_layer(size_t data_cnt,	 // D: 32 ~ 4096
 			  float *input,
 			  float *output)
 {
-	int i, o, a, iidx, oidx, aidx, B = 32;
-	__m256 outv;
+	int i, o, a, iidx, oidx, aidx, x, B = 32;
+	__m256 outv[UNROLL];
 	int cond = input_dim - B;
-
-	// Transpose
 
 	for (i = 0; i < data_cnt; i += B)
 		for (o = 0; o < output_dim; o += B)
@@ -149,34 +191,48 @@ void fc_layer(size_t data_cnt,	 // D: 32 ~ 4096
 				// B x B mini matrix multiplication
 				for (iidx = i; iidx < i + B; iidx++)
 				{
-					for (oidx = o; oidx < o + B; oidx += 8)
+					for (oidx = o; oidx < o + B; oidx += NUM_ELEMENTS * UNROLL)
 					{
-						// outv = output[iidx * output_dim + oidx];
-						outv = _mm256_load_ps(&output[iidx * output_dim + oidx]);
+						for (x = 0; x < UNROLL; x++)
+							outv[x] = _mm256_load_ps(&output[iidx * output_dim + oidx + x * NUM_ELEMENTS]);
+
 						for (aidx = a; aidx < a + B; aidx += 1)
 						{
-							// outv += input[input_dim * iidx + aidx] * matrix[output_dim * aidx + oidx];
-							__m256 a = _mm256_broadcast_ss(&input[input_dim * iidx + aidx]);
-							__m256 b = _mm256_load_ps(&matrix[output_dim * aidx + oidx]);
-							outv = _mm256_fmadd_ps(a, b, outv);
-							// outv = _mm256_add_ps(outv, _mm256_mul_ps(_mm256_broadcast_ss(&input[input_dim * iidx + aidx]), _mm256_load_ps(&matrix[output_dim * aidx + oidx])));
+							for (x = 0; x < UNROLL; x++)
+								// outv[x] = _mm256_add_ps(outv[x], _mm256_mul_ps(_mm256_broadcast_ss(&input[input_dim * iidx + aidx]), _mm256_load_ps(&matrix[output_dim * aidx + oidx + x * NUM_ELEMENTS])));
+								outv[x] = _mm256_fmadd_ps(_mm256_broadcast_ss(&input[input_dim * iidx + aidx]), _mm256_load_ps(&matrix[output_dim * aidx + oidx + x * NUM_ELEMENTS]), outv[x]);
 						}
 						if (a == cond)
 						{
-							// outv += bias[oidx];
-							// outv = _mm256_max_ps(_mm256_add_ps(outv, _mm256_broadcast_ss(bias + oidx)), _mm256_setzero_ps());
-							outv = _mm256_add_ps(_mm256_broadcast_ss(&bias[oidx]), outv);
-							outv = _mm256_max_ps(_mm256_setzero_ps(), outv);
-
 							// ReLU activation function
-							// cmov 가능?
-							// if (outv < 0)
-							// 	outv = 0;
+							for (x = 0; x < UNROLL; x++)
+								outv[x] = _mm256_max_ps(_mm256_add_ps(outv[x], _mm256_load_ps(bias + oidx + x * NUM_ELEMENTS)), _mm256_setzero_ps());
 						}
 						// Store the output
 						// output[iidx * output_dim + oidx] = outv;
-						_mm256_store_ps(&output[iidx * output_dim + oidx], outv);
+						for (x = 0; x < UNROLL; x++)
+							_mm256_store_ps(&output[iidx * output_dim + oidx + x * NUM_ELEMENTS], outv[x]);
 					}
 				}
 		}
 }
+
+// if (oidx == 0)
+// {
+// 	float values[8];
+// 	// Extract lower and upper halves of the AVX register
+// 	__m128 lowerHalf = _mm256_extractf128_ps(outv, 0);
+// 	__m128 upperHalf = _mm256_extractf128_ps(outv, 1);
+
+// 	// Store the extracted values in arrays
+// 	_mm_storeu_ps(&values[0], lowerHalf);
+// 	_mm_storeu_ps(&values[4], upperHalf);
+
+// 	// Print the values
+// 	printf("aidx: %d\n", aidx);
+// 	for (int i = 0; i < 8; ++i)
+// 	{
+// 		printf("outv[%d]: %f\n", i, values[i]);
+// 	}
+// 	printf("\n");
+// }
