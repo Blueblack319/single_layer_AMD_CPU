@@ -180,7 +180,7 @@ void fc_layer(size_t data_cnt,	 // D: 32 ~ 4096
 			  float *input,
 			  float *output)
 {
-	int i, o, a, iidx, oidx, aidx, x, B = 32;
+	int i, o, a, iidx, oidx, aidx, x, B = 64;
 	__m256 outv[UNROLL];
 	int cond = input_dim - B;
 
@@ -198,9 +198,10 @@ void fc_layer(size_t data_cnt,	 // D: 32 ~ 4096
 
 						for (aidx = a; aidx < a + B; aidx += 1)
 						{
+							__m256 input_avx = _mm256_broadcast_ss(&input[input_dim * iidx + aidx]);
 							for (x = 0; x < UNROLL; x++)
 								// outv[x] = _mm256_add_ps(outv[x], _mm256_mul_ps(_mm256_broadcast_ss(&input[input_dim * iidx + aidx]), _mm256_load_ps(&matrix[output_dim * aidx + oidx + x * NUM_ELEMENTS])));
-								outv[x] = _mm256_fmadd_ps(_mm256_broadcast_ss(&input[input_dim * iidx + aidx]), _mm256_load_ps(&matrix[output_dim * aidx + oidx + x * NUM_ELEMENTS]), outv[x]);
+								outv[x] = _mm256_fmadd_ps(input_avx, _mm256_load_ps(&matrix[output_dim * aidx + oidx + x * NUM_ELEMENTS]), outv[x]);
 						}
 						if (a == cond)
 						{
